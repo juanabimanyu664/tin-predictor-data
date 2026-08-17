@@ -218,6 +218,13 @@ def upsert_prices(conn: sqlite3.Connection, results: dict, source: str = "yfinan
     log.info("Upserted %d price rows", len(rows))
 
 
+def get_last_price_date(conn: sqlite3.Connection):
+    """Newest date already present in the prices table (across any ticker),
+    or None if the table is empty."""
+    row = conn.execute("SELECT MAX(date) FROM prices WHERE date != ''").fetchone()
+    return row[0] if row and row[0] else None
+
+
 def override_tin_price(conn: sqlite3.Connection, price: float, dt: str):
     """Manually key in a tin_price for one date (e.g. from a licensed feed).
     Only touches tin_price -- tin_ret / tin_rebased / tin_reb_ret are left
@@ -376,8 +383,23 @@ def main():
             start = "2019-01-01"
             log.info("Backfill mode: fetching from %s", start)
         else:
-            start = (date.today() - timedelta(days=10)).isoformat()
-            log.info("Daily update mode: fetching from %s", start)
+            # Always resume from where the DB actually left off, not a fixed
+            # lookback window -- otherwise any gap bigger than the lookback
+            # (a paused schedule, a failed run, a late first run, etc.)
+            # never gets backfilled and silently stays a hole forever.
+            # A few days of overlap is included as a safety margin in case
+            # a prior run's last day was a late/incomplete Yahoo print.
+            last_date = get_last_price_date(conn)
+            floor_start = (date.today() - timedelta(days=10)).isoformat()
+            if last_date:
+                resume_start = (
+                    date.fromisoformat(last_date) - timedelta(days=5)
+                ).isoformat()
+                start = min(resume_start, floor_start)
+            else:
+                start = floor_start
+            log.info("Daily update mode: fetching from %s (last date in DB: %s)",
+                     start, last_date or "none")
 
         end = (date.today() + timedelta(days=1)).isoformat()
         results = fetch_all(start, end)
