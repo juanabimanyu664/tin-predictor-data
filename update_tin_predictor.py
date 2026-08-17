@@ -22,6 +22,10 @@ Fixes vs the previous version:
     stock price like the others, and recomputes tins_ret alongside it.
   - GitHub push is no longer done from Python — see the accompanying
     GitHub Actions workflow, which handles checkout/commit/push instead.
+  - Daily fetch window now resumes from the last date actually in the DB
+    (with a small safety overlap) instead of a fixed 10-day lookback, so any
+    gap (paused schedule, failed run, late first run) self-heals on the next
+    successful run instead of staying a permanent hole.
 
 Tickers:
   INTC        Intel Corporation (NASDAQ)
@@ -33,7 +37,7 @@ Tickers:
                                                  existing DB already has it)
 
 Usage:
-  python update_tin_predictor.py                  # daily update (last ~10 days)
+  python update_tin_predictor.py                  # daily update (self-healing window)
   python update_tin_predictor.py --backfill        # refetch 5y of history
   python update_tin_predictor.py --db path/to.db   # custom db path
   python update_tin_predictor.py --no-fetch        # recompute metrics only
